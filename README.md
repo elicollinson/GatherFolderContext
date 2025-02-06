@@ -38,7 +38,7 @@ source ~/.bashrc
 
 Run the script in any folder you want to gather information on:
 ```
-gatherfolderinfo node_modules build
+gatherfolderinfo -e "node_modules build"
 ```
 
 This will generate a structured output file with the contents of the specified folders.
