@@ -1,0 +1,156 @@
+#!/usr/bin/env bash
+#
+# Name: gatherfoldercontext
+# Description: Collects a hierarchical map of the current folder (and subfolders),
+#              excluding certain directories (defaults to skipping __pycache__ and .git),
+#              and outputs the folder structure + file contents into a single
+#              text file named after the top-level folder.
+#
+# Usage:
+#   gatherfoldercontext [options]
+#
+# Options:
+#   -h                Show this help and exit.
+#   -e "<dirs>"       Exclude these directories (space-separated).
+#                    Example: -e "node_modules build"
+
+# Always exclude __pycache__ and .git by default
+EXCLUDES=(__pycache__ .git)
+
+# Parse command-line flags
+show_help=0
+
+while getopts "he:" opt; do
+  case $opt in
+    h)
+      show_help=1
+      ;;
+    e)
+      # The argument passed with -e is assumed to be space-separated dir names
+      IFS=' ' read -ra user_excludes <<< "$OPTARG"
+      EXCLUDES+=("${user_excludes[@]}")
+      ;;
+    \?)
+      echo "Unknown option: -$OPTARG" >&2
+      exit 1
+      ;;
+  esac
+done
+
+# If help flag is set, print help and exit
+if [ "$show_help" -eq 1 ]; then
+  echo "Usage: gatherfoldercontext [options]"
+  echo
+  echo "Options:"
+  echo "  -h                Show this help and exit."
+  echo "  -e \"<dirs>\"       Exclude these directories (space-separated)."
+  echo "                    Example: -e \"node_modules build\""
+  echo
+  echo "Description:"
+  echo "  Collects a hierarchical map of the current folder (and subfolders),"
+  echo "  excluding certain directories (defaults to skipping __pycache__ and .git),"
+  echo "  and outputs the folder structure and file contents into a single text file"
+  echo "  named after the top-level folder."
+  echo
+  exit 0
+fi
+
+# Shift off the processed options
+shift $((OPTIND - 1))
+
+# Get the name of the current directory and define the output file
+folder_name=$(basename "$PWD")
+output_file="${folder_name}.txt"
+
+# Clear out (or create) the output file
+> "$output_file"
+
+# Build an exclude pattern for 'tree'
+exclude_pattern=$(IFS='|'; echo "${EXCLUDES[*]}")
+
+{
+  echo "Hierarchical map of \"$folder_name\""
+  echo "-----------------------------------"
+
+  # If 'tree' is installed, use it; otherwise, fallback to 'find'
+  if command -v tree >/dev/null 2>&1; then
+    # Exclude directories matching our pattern
+    tree . --prune -I "$exclude_pattern"
+  else
+    echo "(Using 'find' because 'tree' is not installed.)"
+    echo "Excluded directories: ${EXCLUDES[*]}"
+
+    # Build a dynamic 'prune' expression for 'find'
+    prune_expr=()
+    for d in "${EXCLUDES[@]}"; do
+      prune_expr+=( -path "*/$d" -o )
+    done
+
+    # Remove trailing -o if it exists
+    if [ ${#prune_expr[@]} -gt 0 ]; then
+      last_index=$(( ${#prune_expr[@]} - 1 ))
+      if [ "${prune_expr[$last_index]}" = "-o" ]; then
+        unset 'prune_expr[$last_index]'
+      fi
+    fi
+
+    # Now run find
+    if [ ${#prune_expr[@]} -gt 0 ]; then
+      find . \
+        \( "${prune_expr[@]}" \) -prune -o -print
+    else
+      find . -print
+    fi
+  fi
+
+  echo
+  echo "==================================="
+  echo
+} >> "$output_file"
+
+{
+  # Build the prune expression again for file content collection
+  prune_expr=()
+  for d in "${EXCLUDES[@]}"; do
+    prune_expr+=( -path "*/$d" -o )
+  done
+
+  # Remove trailing -o if it exists
+  if [ ${#prune_expr[@]} -gt 0 ]; then
+    last_index=$(( ${#prune_expr[@]} - 1 ))
+    if [ "${prune_expr[$last_index]}" = "-o" ]; then
+      unset 'prune_expr[$last_index]'
+    fi
+  fi
+
+  # Use find to collect file contents, excluding the output file itself
+  if [ ${#prune_expr[@]} -gt 0 ]; then
+    while IFS= read -r -d '' file; do
+      short_name="${file#./}"
+      echo "File: $short_name"
+      echo "-----------------------------------"
+      cat "$file"
+      echo
+      echo "==================================="
+      echo
+    done < <(
+      find . \
+        \( "${prune_expr[@]}" \) -prune -o -type f ! -name "$output_file" -print0
+    )
+  else
+    # If no excludes, just find all files except the output file
+    while IFS= read -r -d '' file; do
+      short_name="${file#./}"
+      echo "File: $short_name"
+      echo "-----------------------------------"
+      cat "$file"
+      echo
+      echo "==================================="
+      echo
+    done < <(
+      find . -type f ! -name "$output_file" -print0
+    )
+  fi
+} >> "$output_file"
+
+echo "All content has been collected into \"$output_file\""

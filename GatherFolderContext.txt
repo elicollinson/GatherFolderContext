@@ -1,0 +1,249 @@
+Hierarchical map of "GatherFolderContext"
+-----------------------------------
+(Using 'find' because 'tree' is not installed.)
+Excluded directories: __pycache__ .git
+.
+./GatherFolderContext.txt
+./gatherfoldercontext
+./LICENSE
+./README.md
+
+===================================
+
+File: gatherfoldercontext
+-----------------------------------
+#!/usr/bin/env bash
+#
+# Name: gatherfoldercontext
+# Description: Collects a hierarchical map of the current folder (and subfolders),
+#              excluding certain directories (defaults to skipping __pycache__ and .git),
+#              and outputs the folder structure + file contents into a single
+#              text file named after the top-level folder.
+#
+# Usage:
+#   gatherfoldercontext [options]
+#
+# Options:
+#   -h                Show this help and exit.
+#   -e "<dirs>"       Exclude these directories (space-separated).
+#                    Example: -e "node_modules build"
+
+# Always exclude __pycache__ and .git by default
+EXCLUDES=(__pycache__ .git)
+
+# Parse command-line flags
+show_help=0
+
+while getopts "he:" opt; do
+  case $opt in
+    h)
+      show_help=1
+      ;;
+    e)
+      # The argument passed with -e is assumed to be space-separated dir names
+      IFS=' ' read -ra user_excludes <<< "$OPTARG"
+      EXCLUDES+=("${user_excludes[@]}")
+      ;;
+    \?)
+      echo "Unknown option: -$OPTARG" >&2
+      exit 1
+      ;;
+  esac
+done
+
+# If help flag is set, print help and exit
+if [ "$show_help" -eq 1 ]; then
+  echo "Usage: gatherfoldercontext [options]"
+  echo
+  echo "Options:"
+  echo "  -h                Show this help and exit."
+  echo "  -e \"<dirs>\"       Exclude these directories (space-separated)."
+  echo "                    Example: -e \"node_modules build\""
+  echo
+  echo "Description:"
+  echo "  Collects a hierarchical map of the current folder (and subfolders),"
+  echo "  excluding certain directories (defaults to skipping __pycache__ and .git),"
+  echo "  and outputs the folder structure and file contents into a single text file"
+  echo "  named after the top-level folder."
+  echo
+  exit 0
+fi
+
+# Shift off the processed options
+shift $((OPTIND - 1))
+
+# Get the name of the current directory and define the output file
+folder_name=$(basename "$PWD")
+output_file="${folder_name}.txt"
+
+# Clear out (or create) the output file
+> "$output_file"
+
+# Build an exclude pattern for 'tree'
+exclude_pattern=$(IFS='|'; echo "${EXCLUDES[*]}")
+
+{
+  echo "Hierarchical map of \"$folder_name\""
+  echo "-----------------------------------"
+
+  # If 'tree' is installed, use it; otherwise, fallback to 'find'
+  if command -v tree >/dev/null 2>&1; then
+    # Exclude directories matching our pattern
+    tree . --prune -I "$exclude_pattern"
+  else
+    echo "(Using 'find' because 'tree' is not installed.)"
+    echo "Excluded directories: ${EXCLUDES[*]}"
+
+    # Build a dynamic 'prune' expression for 'find'
+    prune_expr=()
+    for d in "${EXCLUDES[@]}"; do
+      prune_expr+=( -path "*/$d" -o )
+    done
+
+    # Remove trailing -o if it exists
+    if [ ${#prune_expr[@]} -gt 0 ]; then
+      last_index=$(( ${#prune_expr[@]} - 1 ))
+      if [ "${prune_expr[$last_index]}" = "-o" ]; then
+        unset 'prune_expr[$last_index]'
+      fi
+    fi
+
+    # Now run find
+    if [ ${#prune_expr[@]} -gt 0 ]; then
+      find . \
+        \( "${prune_expr[@]}" \) -prune -o -print
+    else
+      find . -print
+    fi
+  fi
+
+  echo
+  echo "==================================="
+  echo
+} >> "$output_file"
+
+{
+  # Build the prune expression again for file content collection
+  prune_expr=()
+  for d in "${EXCLUDES[@]}"; do
+    prune_expr+=( -path "*/$d" -o )
+  done
+
+  # Remove trailing -o if it exists
+  if [ ${#prune_expr[@]} -gt 0 ]; then
+    last_index=$(( ${#prune_expr[@]} - 1 ))
+    if [ "${prune_expr[$last_index]}" = "-o" ]; then
+      unset 'prune_expr[$last_index]'
+    fi
+  fi
+
+  # Use find to collect file contents, excluding the output file itself
+  if [ ${#prune_expr[@]} -gt 0 ]; then
+    while IFS= read -r -d '' file; do
+      short_name="${file#./}"
+      echo "File: $short_name"
+      echo "-----------------------------------"
+      cat "$file"
+      echo
+      echo "==================================="
+      echo
+    done < <(
+      find . \
+        \( "${prune_expr[@]}" \) -prune -o -type f ! -name "$output_file" -print0
+    )
+  else
+    # If no excludes, just find all files except the output file
+    while IFS= read -r -d '' file; do
+      short_name="${file#./}"
+      echo "File: $short_name"
+      echo "-----------------------------------"
+      cat "$file"
+      echo
+      echo "==================================="
+      echo
+    done < <(
+      find . -type f ! -name "$output_file" -print0
+    )
+  fi
+} >> "$output_file"
+
+echo "All content has been collected into \"$output_file\""
+===================================
+
+File: LICENSE
+-----------------------------------
+MIT License
+
+Copyright (c) 2025 Eli Collinson
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+===================================
+
+File: README.md
+-----------------------------------
+# GatherFolderContext
+
+**GatherFolderContext** is a simple script that collects a hierarchical map of the current folder (and its subfolders), including the text of each file. It then outputs everything into a single text file named after the top-level folder.
+
+## 🚀 Setup
+
+### 1️⃣ Clone the Repository
+```
+git clone <your-repo-url>
+cd gatherfoldercontext
+```
+
+### 2️⃣ Make the Script Executable
+```
+chmod +x gatherfoldercontext
+```
+
+### 3️⃣ Move the Script to Your Path
+```
+cp gatherfoldercontext ~/.local/bin/  
+```
+
+### 4️⃣ Ensure the Folder is in Your Path
+If it's not already in your path, add it:
+```
+export PATH="$PATH:$HOME/.local/bin"
+```
+
+### 5️⃣ Reload Your Shell Configuration
+```
+source ~/.bashrc
+```
+(Use `source ~/.zshrc` if you're using Zsh.)
+
+---
+
+## 🎯 Usage
+
+Run the script in any folder you want to gather information on:
+```
+gatherfolderinfo node_modules build
+```
+
+This will generate a structured output file with the contents of the specified folders.
+
+Happy coding! 🚀
+
+===================================
+
