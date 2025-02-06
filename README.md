@@ -41,6 +41,7 @@ Run the script in any folder you want to gather information on:
 gatherfolderinfo -e "node_modules build"
 ```
 
+GatherFolderContext.txt is an example of it
 This will generate a structured output file with the contents of the specified folders.
 
 Happy coding! 🚀
